@@ -18,6 +18,7 @@ var _readDir = Promise.promisify(RNFSManager.readDir);
 var _exists = Promise.promisify(RNFSManager.exists);
 var _stat = Promise.promisify(RNFSManager.stat);
 var _readFile = Promise.promisify(RNFSManager.readFile);
+var _readResource= Promise.promisify(RNFSManager.readResource);
 var _writeFile = Promise.promisify(RNFSManager.writeFile);
 var _moveFile = Promise.promisify(RNFSManager.moveFile);
 var _unlink = Promise.promisify(RNFSManager.unlink);
@@ -83,7 +84,7 @@ var RNFS = {
       })
       .catch(convertError);
   },
-  
+
   exists(filepath) {
     return _exists(filepath)
       .catch(convertError);
@@ -107,6 +108,14 @@ var RNFS = {
         }
 
         return contents;
+      })
+      .catch(convertError);
+  },
+
+  readResource(filepath) {
+    return _readResource(filepath)
+      .then((content) => {
+        return content;
       })
       .catch(convertError);
   },
