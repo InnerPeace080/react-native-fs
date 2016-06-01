@@ -8,8 +8,7 @@ if (typeof self === 'undefined') {
 }
 
 var RNFSManager = require('react-native').NativeModules.RNFSManager;
-var NativeAppEventEmitter = require('react-native').NativeAppEventEmitter;  // iOS
-var DeviceEventEmitter = require('react-native').DeviceEventEmitter;        // Android
+var NativeAppEventEmitter = require('react-native').NativeAppEventEmitter;
 var Promise = require('bluebird');
 var base64 = require('base-64');
 var utf8 = require('utf8');
@@ -24,7 +23,9 @@ var _moveFile = Promise.promisify(RNFSManager.moveFile);
 var _unlink = Promise.promisify(RNFSManager.unlink);
 var _mkdir = Promise.promisify(RNFSManager.mkdir);
 var _downloadFile = Promise.promisify(RNFSManager.downloadFile);
+var _uploadFiles = Promise.promisify(RNFSManager.uploadFiles);
 var _pathForBundle = Promise.promisify(RNFSManager.pathForBundle);
+var _getFSInfo = Promise.promisify(RNFSManager.getFSInfo);
 
 var convertError = (err) => {
   if (err.isOperational && err.cause) {
@@ -74,8 +75,8 @@ var RNFS = {
     return _stat(filepath)
       .then((result) => {
         return {
-          'ctime': new Date(result.ctime*1000),
-          'mtime': new Date(result.mtime*1000),
+          'ctime': new Date(result.ctime * 1000),
+          'mtime': new Date(result.mtime * 1000),
           'size': result.size,
           'mode': result.mode,
           isFile: () => result.type === NSFileTypeRegular,
@@ -148,6 +149,11 @@ var RNFS = {
     return _pathForBundle(bundleName);
   },
 
+  getFSInfo() {
+    return _getFSInfo()
+      .catch(convertError);
+  },
+
   unlink(filepath) {
     return _unlink(filepath)
       .catch(convertError);
@@ -161,31 +167,19 @@ var RNFS = {
 
   downloadFile(fromUrl, toFile, begin, progress) {
     var jobId = getJobId();
-    var subscriptionIos, subscriptionAndroid;
-
-    if (!begin) begin = (info) => {
-      console.log('Download begun:', info);
-    };
+    var subscriptions = [];
 
     if (begin) {
-      // Two different styles of subscribing to events for different platforms, hmmm....
-      if (NativeAppEventEmitter.addListener)
-        subscriptionIos = NativeAppEventEmitter.addListener('DownloadBegin-' + jobId, begin);
-      if (DeviceEventEmitter.addListener)
-        subscriptionAndroid = DeviceEventEmitter.addListener('DownloadBegin-' + jobId, begin);
+      subscriptions.push(NativeAppEventEmitter.addListener('DownloadBegin-' + jobId, begin));
     }
 
     if (progress) {
-      if (NativeAppEventEmitter.addListener)
-        subscriptionIos = NativeAppEventEmitter.addListener('DownloadProgress-' + jobId, progress);
-      if (DeviceEventEmitter.addListener)
-        subscriptionAndroid = DeviceEventEmitter.addListener('DownloadProgress-' + jobId, progress);
+      subscriptions.push(NativeAppEventEmitter.addListener('DownloadProgress-' + jobId, progress));
     }
 
     return _downloadFile(fromUrl, toFile, jobId)
       .then(res => {
-        if (subscriptionIos) subscriptionIos.remove();
-        if (subscriptionAndroid) subscriptionAndroid.remove();
+        subscriptions.forEach(sub => sub.remove());
         return res;
       })
       .catch(convertError);
@@ -195,9 +189,50 @@ var RNFS = {
     RNFSManager.stopDownload(jobId);
   },
 
+  uploadFiles(options) {
+    var jobId = getJobId();
+    var subscriptions = [];
+
+    if (typeof options !== 'object') throw new Error('uploadFiles: Invalid value for argument `options`');
+    if (typeof options.toUrl !== 'string') throw new Error('uploadFiles: Invalid value for property `toUrl`');
+    if (!Array.isArray(options.files)) throw new Error('uploadFiles: Invalid value for property `files`');
+    if (options.headers && typeof options.headers !== 'object') throw new Error('uploadFiles: Invalid value for property `headers`');
+    if (options.fields && typeof options.fields !== 'object') throw new Error('uploadFiles: Invalid value for property `fields`');
+    if (options.method && typeof options.method !== 'string') throw new Error('uploadFiles: Invalid value for property `method`');
+
+    if (options.beginCallback) {
+      subscriptions.push(NativeAppEventEmitter.addListener('UploadBegin-' + jobId, options.beginCallback));
+    }
+
+    if (options.progressCallback) {
+      subscriptions.push(NativeAppEventEmitter.addListener('UploadProgress-' + jobId, options.progressCallback));
+    }
+
+    var bridgeOptions = {
+      jobId: jobId,
+      toUrl: options.toUrl,
+      files: options.files,
+      headers: options.headers || {},
+      fields: options.fields || {},
+      method: options.method || 'POST'
+    };
+
+    return _uploadFiles(bridgeOptions)
+      .then(res => {
+        subscriptions.forEach(sub => sub.remove());
+        return res;
+      });
+  },
+
+  stopUpload(jobId) {
+    RNFSManager.stopUpload(jobId);
+  },
+
   MainBundlePath: RNFSManager.MainBundlePath,
   CachesDirectoryPath: RNFSManager.NSCachesDirectoryPath,
   DocumentDirectoryPath: RNFSManager.NSDocumentDirectoryPath,
+  ExternalDirectoryPath: RNFSManager.NSExternalDirectoryPath,
+  TemporaryDirectoryPath: RNFSManager.NSTemporaryDirectoryPath,
   LibraryDirectoryPath: RNFSManager.NSLibraryDirectoryPath,
   PicturesDirectoryPath: RNFSManager.NSPicturesDirectoryPath
 };
