@@ -64,7 +64,23 @@ public class RNFSManager extends ReactContextBaseJavaModule {
     try {
       byte[] bytes = Base64.decode(base64Content, Base64.DEFAULT);
 
-      FileOutputStream outputStream = new FileOutputStream(filepath);
+      FileOutputStream outputStream = new FileOutputStream(filepath, false);
+      outputStream.write(bytes);
+      outputStream.close();
+
+      callback.invoke(null, true, filepath);
+    } catch (Exception ex) {
+      ex.printStackTrace();
+      callback.invoke(makeErrorPayload(ex));
+    }
+  }
+
+  @ReactMethod
+  public void appendFile(String filepath, String base64Content, ReadableMap options, Callback callback) {
+    try {
+      byte[] bytes = Base64.decode(base64Content, Base64.DEFAULT);
+
+      FileOutputStream outputStream = new FileOutputStream(filepath, true);
       outputStream.write(bytes);
       outputStream.close();
 
@@ -245,15 +261,20 @@ public class RNFSManager extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
-  public void downloadFile(String urlStr, final String filepath, final int jobId, final Callback callback) {
+  public void downloadFile(ReadableMap options, final Callback callback) {
     try {
-      File file = new File(filepath);
-      URL url = new URL(urlStr);
+      File file = new File(options.getString("toFile"));
+      URL url = new URL(options.getString("fromUrl"));
+      final int jobId = options.getInt("jobId");
+      ReadableMap headers = options.getMap("headers");
+      int progressDivider = options.getInt("progressDivider");
 
       DownloadParams params = new DownloadParams();
 
       params.src = url;
       params.dest = file;
+      params.headers = headers;
+      params.progressDivider = progressDivider;
 
       params.onTaskCompleted = new DownloadParams.OnTaskCompleted() {
         public void onTaskCompleted(DownloadResult res) {
